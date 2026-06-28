@@ -1,0 +1,90 @@
+import json
+import logging
+
+import httpx
+
+from config import Settings
+from schemas import TrainingAssistantTurn, TrainingSessionDraft
+from services.ai_training_prompts import AI_TRAINING_RESPONSE_SCHEMA, build_training_system_prompt
+
+
+logger = logging.getLogger(__name__)
+
+
+class AITrainingService:
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+        self._client = httpx.AsyncClient(
+            base_url=settings.openai_base_url,
+            timeout=httpx.Timeout(120.0, connect=30.0),
+            headers={
+                "Authorization": f"Bearer {settings.openai_api_key}",
+                "Content-Type": "application/json",
+            },
+        )
+
+    async def generate_turn(
+        self,
+        draft: TrainingSessionDraft,
+        user_message: str,
+        is_new_dialogue: bool,
+    ) -> TrainingAssistantTurn:
+        payload = {
+            "model": self._settings.openai_model,
+            "temperature": 0.2,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": build_training_system_prompt(
+                        topic=self._settings.training_topic,
+                        material=self._settings.get_training_material(draft.employee_role),
+                        total_questions=draft.total_questions,
+                        employee_role=draft.employee_role,
+                        phase=draft.phase,
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": self._build_prompt(
+                        draft=draft,
+                        user_message=user_message,
+                        is_new_dialogue=is_new_dialogue,
+                    ),
+                },
+            ],
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": AI_TRAINING_RESPONSE_SCHEMA,
+            },
+        }
+
+        response = await self._client.post("/chat/completions", json=payload)
+        response.raise_for_status()
+        content = response.json()["choices"][0]["message"]["content"]
+        logger.info("Raw AI training JSON response: %s", content)
+        return TrainingAssistantTurn.model_validate(json.loads(content))
+
+    async def close(self) -> None:
+        await self._client.aclose()
+
+    @staticmethod
+    def _build_prompt(
+        draft: TrainingSessionDraft,
+        user_message: str,
+        is_new_dialogue: bool,
+    ) -> str:
+        serialized_draft = json.dumps(draft.model_dump(), ensure_ascii=False, indent=2)
+        return (
+            f"Новая сессия: {str(is_new_dialogue).lower()}\n"
+            f"Текущее состояние сессии:\n{serialized_draft}\n\n"
+            f"Последнее сообщение сотрудника:\n{user_message}\n\n"
+            "Важно:\n"
+            "- сначала определи user_intent по допустимым значениям из системного промпта;\n"
+            "- если phase = learning, используй current_learning_section и learning_status как память процесса;\n"
+            "- во время обучения не задавай проверочные вопросы и не используй last_learning_question;\n"
+            "- если learning_status = waiting_confirmation и сотрудник подтвердил понимание, не повторяй блок, поставь section_completed=true;\n"
+            "- если сотрудник задал свой вопрос, ответь по материалу и не завершай текущую тему;\n"
+            "- если phase = testing и current_question заполнен, оцени именно ответ на current_question;\n"
+            "- questions_answered уже содержит число проверенных тестовых ответов;\n"
+            "- когда проверенных тестовых ответов станет столько же, сколько total_questions, заверши сессию через phase=completed."
+        )
