@@ -9,7 +9,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from bot.keyboards import cancel_keyboard, quiz_keyboard, remove_keyboard, role_keyboard
+from bot.keyboards import cancel_keyboard, quiz_keyboard, remove_keyboard, role_keyboard, training_mode_keyboard
 from config import Settings
 from database import TrainingResultRepository
 from schemas import TrainingSessionDraft
@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 MARKDOWN_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+MARKDOWN_ITALIC_RE = re.compile(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)")
 QUIZ_ANSWER_RE = re.compile(r"^[ABCDE](?:\+[ABCDE]){0,4}$")
 QUIZ_LETTER_MAP = str.maketrans(
     {
@@ -57,6 +58,8 @@ QUIZ_LETTER_MAP = str.maketrans(
 POSITIVE_RE = re.compile(r"^(да|понятно|ясно|ок|окей|хорошо|дальше|идем дальше|можем|готово?)\.?!?$", re.IGNORECASE)
 NEGATIVE_RE = re.compile(r"^(нет|не понятно|непонятно|не ясно|неясно|объясни|повтори)\.?!?$", re.IGNORECASE)
 START_TEST_RE = re.compile(r"(готов|готова|начать|перейти).{0,20}(тест|тестирован)", re.IGNORECASE)
+LEARNING_MODE_ALIASES = {"обучение + тест", "обучение", "learning", "learn", "study"}
+TEST_ONLY_MODE_ALIASES = {"только тест", "тест", "test", "testing", "quiz"}
 
 
 class TrainingStates(StatesGroup):
@@ -65,7 +68,58 @@ class TrainingStates(StatesGroup):
 
 def telegram_html(text: str) -> str:
     escaped = escape(text)
-    return MARKDOWN_BOLD_RE.sub(r"<b>\1</b>", escaped)
+    escaped = MARKDOWN_BOLD_RE.sub(r"<b>\1</b>", escaped)
+    return MARKDOWN_ITALIC_RE.sub(r"<i>\1</i>", escaped)
+
+
+def material_html(text: str) -> str:
+    lines = text.splitlines()
+    formatted_lines: list[str] = []
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line:
+            if formatted_lines and formatted_lines[-1] != "":
+                formatted_lines.append("")
+            continue
+
+        if line.startswith("#### "):
+            formatted_lines.append(f"<b>{escape(line[5:])}</b>")
+            continue
+
+        if line.startswith("### "):
+            formatted_lines.append(f"<b>{escape(line[4:])}</b>")
+            continue
+
+        if line.startswith("## "):
+            formatted_lines.append(f"<b>{escape(line[3:])}</b>")
+            continue
+
+        if line.startswith(">"):
+            formatted_lines.append(f"<i>{escape(line.lstrip('> ').strip())}</i>")
+            continue
+
+        if line.startswith("- [ ] "):
+            formatted_lines.append(f"• {escape(line[6:])}")
+            continue
+
+        if line.startswith("- "):
+            formatted_lines.append(f"• {escape(line[2:])}")
+            continue
+
+        if line.endswith(":") and len(line) <= 80:
+            formatted_lines.append(f"<b>{escape(line)}</b>")
+            continue
+
+        if line in {"Золотое правило проекта", "Формат пилота", "Что проверяется на пилоте"}:
+            formatted_lines.append(f"<b>{escape(line)}</b>")
+            continue
+
+        formatted_lines.append(telegram_html(line))
+
+    while formatted_lines and formatted_lines[-1] == "":
+        formatted_lines.pop()
+    return "\n".join(formatted_lines)
 
 
 def normalize_quiz_answer(text: str) -> str:
@@ -98,6 +152,15 @@ def is_negative_confirmation(text: str) -> bool:
     return bool(NEGATIVE_RE.fullmatch(" ".join(text.split()).strip()))
 
 
+def normalize_training_mode(text: str) -> str | None:
+    cleaned = " ".join(text.split()).strip().lower()
+    if cleaned in LEARNING_MODE_ALIASES:
+        return "learning"
+    if cleaned in TEST_ONLY_MODE_ALIASES:
+        return "testing"
+    return None
+
+
 def training_keyboard(draft: TrainingSessionDraft) -> ReplyKeyboardMarkup | ReplyKeyboardRemove:
     if draft.phase == "testing":
         return quiz_keyboard()
@@ -117,19 +180,19 @@ def format_section(section: TrainingSection, employee_name: str | None = None, i
 
     return (
         f"{prefix}"
-        f"📘 Тема {section.number}. {section.title}\n\n"
-        f"{section.content}\n\n"
-        "Все понятно? Можем идти дальше?"
+        f"📘 <b>Тема {section.number}. {escape(section.title)}</b>\n\n"
+        f"{material_html(section.content)}\n\n"
+        "<b>Все понятно? Можем идти дальше?</b>"
     )
 
 
 def format_quiz_question(question: QuizQuestion, number: int, total: int) -> str:
     answer_hint = "Можно выбрать несколько вариантов." if question.allows_multiple_answers else "Выберите один вариант."
-    options = "\n".join(f"{letter}. {text}" for letter, text in question.options.items())
+    options = "\n".join(f"<b>{letter}.</b> {escape(text)}" for letter, text in question.options.items())
     return (
-        f"📝 Тест\n\n"
-        f"Вопрос {number} из {total}\n\n"
-        f"❓ {question.question}\n\n"
+        f"📝 <b>Тест</b>\n\n"
+        f"<b>Вопрос {number} из {total}</b>\n\n"
+        f"❓ {escape(question.question)}\n\n"
         f"{options}\n\n"
         f"{answer_hint}"
     )
@@ -244,6 +307,7 @@ async def handle_start(message: Message, state: FSMContext, settings: Settings, 
         draft=training_service.start_session().model_dump(),
         role_collected=False,
         name_collected=False,
+        mode_collected=False,
     )
     await message.answer(
         "Здравствуйте! Я помогу изучить новый материал, а затем проведу тестирование.\n\n"
@@ -280,6 +344,7 @@ async def process_training(
     draft = TrainingSessionDraft.model_validate(state_data.get("draft", {}))
     role_collected = bool(state_data.get("role_collected"))
     name_collected = bool(state_data.get("name_collected"))
+    mode_collected = bool(state_data.get("mode_collected"))
     user_text = message.text or ""
 
     try:
@@ -294,16 +359,34 @@ async def process_training(
 
         if not name_collected:
             updated = training_service.register_employee_name(draft=draft, employee_name=user_text)
-            section = current_section(settings, training_content_service, updated)
+            await state.update_data(draft=updated.model_dump(), name_collected=True)
+            await message.answer(
+                "Выберите режим:",
+                reply_markup=training_mode_keyboard(),
+            )
+            return
+
+        if not mode_collected:
+            mode = normalize_training_mode(user_text)
+            if mode is None:
+                await message.answer(
+                    "Выберите режим кнопкой: Обучение + тест или Только тест.",
+                    reply_markup=training_mode_keyboard(),
+                )
+                return
+
+            await state.update_data(mode_collected=True)
+
+            if mode == "testing":
+                await start_testing(message, state, settings, training_content_service, draft)
+                return
+
+            section = current_section(settings, training_content_service, draft)
             if section is None:
                 await message.answer("Не удалось найти первый раздел материала для этой роли.", reply_markup=cancel_keyboard())
                 return
 
-            await state.update_data(draft=updated.model_dump(), name_collected=True)
-            await message.answer(
-                telegram_html(format_section(section, updated.employee_name, is_first=True)),
-                reply_markup=cancel_keyboard(),
-            )
+            await message.answer(format_section(section, draft.employee_name, is_first=True), reply_markup=cancel_keyboard())
             return
 
         if draft.phase == "learning":
@@ -321,10 +404,7 @@ async def process_training(
 
                 updated.current_learning_section = section.number
                 await state.update_data(draft=updated.model_dump())
-                await message.answer(
-                    telegram_html("✅ Отлично, идем дальше.\n\n" + format_section(section)),
-                    reply_markup=cancel_keyboard(),
-                )
+                await message.answer("✅ Отлично, идем дальше.\n\n" + format_section(section), reply_markup=cancel_keyboard())
                 return
 
             section = current_section(settings, training_content_service, draft)
@@ -346,10 +426,7 @@ async def process_training(
                 logger.exception("Failed to answer employee question")
                 answer = "Не удалось получить пояснение от AI. Попробуйте задать вопрос еще раз или обратитесь к координатору."
 
-            await message.answer(
-                telegram_html(f"{answer}\n\nВсе понятно? Можем идти дальше?"),
-                reply_markup=cancel_keyboard(),
-            )
+            await message.answer(telegram_html(f"{answer}\n\n**Все понятно? Можем идти дальше?**"), reply_markup=cancel_keyboard())
             return
 
         if draft.phase == "testing":
@@ -375,7 +452,7 @@ async def process_training(
             normalized_answer = normalize_quiz_answer(user_text)
             if not QUIZ_ANSWER_RE.fullmatch(normalized_answer):
                 await message.answer(
-                        "Пожалуйста, выберите вариант ответа кнопкой или напишите комбинацию вроде A+B.",
+                    "Пожалуйста, выберите вариант ответа кнопкой или напишите комбинацию вроде A+B.",
                     reply_markup=quiz_keyboard(),
                 )
                 return
@@ -420,15 +497,12 @@ async def process_training(
                 )
                 return
 
-            next_question = questions[updated.questions_answered]
-            updated.current_question = next_question.question
+            next_question_item = questions[updated.questions_answered]
+            updated.current_question = next_question_item.question
             updated.total_questions = len(questions)
             await state.update_data(draft=updated.model_dump())
             await message.answer(
-                telegram_html(
-                    f"{feedback}\n\n"
-                    + format_quiz_question(next_question, number=updated.questions_answered + 1, total=len(questions))
-                ),
+                telegram_html(feedback) + "\n\n" + format_quiz_question(next_question_item, number=updated.questions_answered + 1, total=len(questions)),
                 reply_markup=quiz_keyboard(),
             )
             return
@@ -436,7 +510,13 @@ async def process_training(
         await message.answer("Сессия уже завершена. Чтобы начать заново, отправьте /start.", reply_markup=remove_keyboard())
 
     except ValueError as exc:
-        await message.answer(str(exc), reply_markup=role_keyboard() if not role_collected else cancel_keyboard())
+        if not role_collected:
+            reply_markup = role_keyboard()
+        elif name_collected and not mode_collected:
+            reply_markup = training_mode_keyboard()
+        else:
+            reply_markup = cancel_keyboard()
+        await message.answer(str(exc), reply_markup=reply_markup)
     except Exception:
         logger.exception("Failed to process training")
         await message.answer(

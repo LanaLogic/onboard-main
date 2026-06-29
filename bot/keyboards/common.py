@@ -12,11 +12,23 @@ def cancel_keyboard() -> ReplyKeyboardMarkup:
 def role_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="аудитор"), KeyboardButton(text="оператор")],
+            [KeyboardButton(text="auditor"), KeyboardButton(text="operator")],
             [KeyboardButton(text="/cancel")],
         ],
         resize_keyboard=True,
-        input_field_placeholder="Выберите роль",
+        input_field_placeholder="Choose role",
+    )
+
+
+def training_mode_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="Обучение + тест")],
+            [KeyboardButton(text="Только тест")],
+            [KeyboardButton(text="/cancel")],
+        ],
+        resize_keyboard=True,
+        input_field_placeholder="Выберите режим",
     )
 
 

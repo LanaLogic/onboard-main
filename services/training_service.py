@@ -16,7 +16,7 @@ class TrainingService:
         cleaned = " ".join(value.split()).strip().lower()
         role = cls.ROLE_ALIASES.get(cleaned)
         if role is None:
-            raise ValueError("Выберите роль: аудитор или оператор.")
+            raise ValueError("Выберите роль: auditor или operator.")
         return role
 
     @staticmethod
