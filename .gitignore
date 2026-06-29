@@ -9,3 +9,4 @@ venv/
 .idea/
 .vscode/
 postgres_data/
+TODO.txt
