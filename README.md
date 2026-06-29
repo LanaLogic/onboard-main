@@ -9,7 +9,7 @@ Telegram-бот для обучения сотрудников по роли и 
 - выбор роли сотрудника: `аудитор` или `оператор`;
 - обучение только по материалу выбранной роли;
 - ответы на вопросы сотрудника только по инструкции;
-- тест из `QUIZ_QUESTION_COUNT` вопросов;
+- тест из JSON-файла выбранной роли;
 - подсчет результата и процента правильных ответов;
 - статус `Тест сдан` / `Тест не сдан` по порогу `PASSING_SCORE_PERCENT`;
 - сохранение результата в таблицу `training_results`.
@@ -33,9 +33,14 @@ Telegram-бот для обучения сотрудников по роли и 
 materials/
   auditor.txt
   operator.txt
+  tests/
+    auditor.json
+    operator.json
 ```
 
 Каждый файл самодостаточный: содержит вводную часть, правила роли, примеры, ошибки и критерии проверки. Файлы оформлены в Markdown, но оставлены с расширением `.txt`, чтобы не менять логику загрузки.
+
+Тестовые вопросы лежат отдельно в `materials/tests/*.json`. Код сам задает вопросы по порядку, проверяет ответы и считает процент. AI подключается только для пояснений по материалу и итоговой обратной связи.
 
 ## Переменные Окружения
 
@@ -51,8 +56,9 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 TRAINING_TOPIC=Ценовой мониторинг
 TRAINING_AUDITOR_MATERIAL_FILE=./materials/auditor.txt
 TRAINING_OPERATOR_MATERIAL_FILE=./materials/operator.txt
+TRAINING_AUDITOR_QUIZ_FILE=./materials/tests/auditor.json
+TRAINING_OPERATOR_QUIZ_FILE=./materials/tests/operator.json
 
-QUIZ_QUESTION_COUNT=5
 PASSING_SCORE_PERCENT=80
 LOG_LEVEL=INFO
 ```

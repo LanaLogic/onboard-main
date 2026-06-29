@@ -24,7 +24,8 @@ class Settings(BaseSettings):
     training_material_file: str | None = Field(default=None, alias="TRAINING_MATERIAL_FILE")
     training_auditor_material_file: str = Field(default="./materials/auditor.txt", alias="TRAINING_AUDITOR_MATERIAL_FILE")
     training_operator_material_file: str = Field(default="./materials/operator.txt", alias="TRAINING_OPERATOR_MATERIAL_FILE")
-    quiz_question_count: int = Field(default=5, alias="QUIZ_QUESTION_COUNT", ge=1, le=20)
+    training_auditor_quiz_file: str = Field(default="./materials/tests/auditor.json", alias="TRAINING_AUDITOR_QUIZ_FILE")
+    training_operator_quiz_file: str = Field(default="./materials/tests/operator.json", alias="TRAINING_OPERATOR_QUIZ_FILE")
     passing_score_percent: int = Field(default=80, alias="PASSING_SCORE_PERCENT", ge=0, le=100)
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
@@ -51,6 +52,13 @@ class Settings(BaseSettings):
         if self.training_material_file:
             return self._read_material_file(self.training_material_file)
         return self.training_material.strip()
+
+    def get_quiz_file(self, employee_role: str | None = None) -> str:
+        role_quiz_files = {
+            "auditor": self.training_auditor_quiz_file,
+            "operator": self.training_operator_quiz_file,
+        }
+        return role_quiz_files.get(employee_role, self.training_operator_quiz_file)
 
 
 @lru_cache(maxsize=1)

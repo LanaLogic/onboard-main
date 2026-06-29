@@ -9,7 +9,7 @@ from bot.handlers import router
 from bot.middlewares import LoggingMiddleware
 from config import get_settings
 from database import create_engine, create_session_factory, init_db
-from services import AITrainingService, TrainingService
+from services import AITrainingService, TrainingContentService, TrainingService
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +54,7 @@ async def run_bot() -> None:
     engine = create_engine(settings.database_url)
     session_factory = create_session_factory(engine)
     training_service = TrainingService()
+    training_content_service = TrainingContentService()
     ai_training_service = AITrainingService(settings)
 
     await init_db(engine)
@@ -63,6 +64,7 @@ async def run_bot() -> None:
     dp["settings"] = settings
     dp["session_factory"] = session_factory
     dp["training_service"] = training_service
+    dp["training_content_service"] = training_content_service
     dp["ai_training_service"] = ai_training_service
 
     logger.info("Starting AI training bot")

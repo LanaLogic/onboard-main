@@ -24,12 +24,11 @@ def quiz_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="A"), KeyboardButton(text="B"), KeyboardButton(text="C")],
-            [KeyboardButton(text="A+B"), KeyboardButton(text="A+C"), KeyboardButton(text="B+C")],
-            [KeyboardButton(text="A+B+C")],
+            [KeyboardButton(text="D"), KeyboardButton(text="E")],
             [KeyboardButton(text="/cancel")],
         ],
         resize_keyboard=True,
-        input_field_placeholder="Выберите вариант ответа",
+        input_field_placeholder="Выберите вариант или напишите A+B",
     )
 
 

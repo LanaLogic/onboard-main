@@ -26,8 +26,8 @@ class TrainingService:
             raise ValueError("Укажите имя сотрудника хотя бы из двух символов.")
         return cleaned
 
-    def start_session(self, total_questions: int) -> TrainingSessionDraft:
-        return TrainingSessionDraft(total_questions=total_questions)
+    def start_session(self) -> TrainingSessionDraft:
+        return TrainingSessionDraft(total_questions=1)
 
     def register_employee_role(self, draft: TrainingSessionDraft, employee_role: str) -> TrainingSessionDraft:
         updated = TrainingSessionDraft.model_validate(draft.model_dump())

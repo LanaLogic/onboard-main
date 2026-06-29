@@ -45,6 +45,7 @@ class TrainingSessionDraft(BaseModel):
     questions_answered: int = Field(default=0, ge=0, le=20)
     correct_answers: int = Field(default=0, ge=0, le=20)
     current_question: str | None = None
+    quiz_mistakes: list[str] = Field(default_factory=list)
     last_answer_feedback: str | None = None
     final_summary: str | None = None
 
